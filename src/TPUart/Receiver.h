@@ -4,7 +4,11 @@
 #include "TPUart/RingBuffer.h"
 #include "TPUart/SearchBuffer.h"
 #include "TPUart/Types.h"
+#if defined(ESP_PLATFORM)
+#include "openknx_espidf_compat.h"
+#else
 #include <Arduino.h>
+#endif
 
 namespace TPUart
 {

@@ -48,7 +48,7 @@ namespace TPUart
         unsigned long start = millis();
         do
         {
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
             vTaskDelay(pdMS_TO_TICKS(1));
 #endif
             int value = _interface->read();
@@ -185,7 +185,7 @@ namespace TPUart
 #if defined(ARDUINO_ARCH_RP2040)
         mutex_init(&_rxLock);
         mutex_init(&_txLock);
-#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
         _rxLock = xSemaphoreCreateMutex();
         _txLock = xSemaphoreCreateMutex();
 #endif
@@ -202,7 +202,7 @@ namespace TPUart
 
         uint32_t owner;
         return mutex_try_enter(&_rxLock, &owner);
-#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
         TickType_t wait = blocking ? 0xFFFFFFFF : 0;
         return xSemaphoreTake(_rxLock, wait) == pdTRUE;
 #else
@@ -215,7 +215,7 @@ namespace TPUart
 
 #if defined(ARDUINO_ARCH_RP2040)
         mutex_exit(&_rxLock);
-#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
         xSemaphoreGive(_rxLock);
 #endif
     }
@@ -231,7 +231,7 @@ namespace TPUart
 
         uint32_t owner;
         return mutex_try_enter(&_txLock, &owner);
-#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
         TickType_t wait = blocking ? 0xFFFFFFFF : 0;
         return xSemaphoreTake(_txLock, wait) == pdTRUE;
 #else
@@ -243,7 +243,7 @@ namespace TPUart
     {
 #if defined(ARDUINO_ARCH_RP2040)
         mutex_exit(&_txLock);
-#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
         xSemaphoreGive(_txLock);
 #endif
     }
@@ -306,7 +306,7 @@ namespace TPUart
         while (_transmitter.isTransmitting())
         {
             processTransmitByte();
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
             vTaskDelay(1);
 #endif
             if (millis() - start > 20) break;

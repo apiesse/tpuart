@@ -1,5 +1,9 @@
 #include "TPUart/Frame.h"
+#if defined(ESP_PLATFORM)
+#include "openknx_espidf_compat.h"
+#else
 #include <Arduino.h>
+#endif
 #include <cstdint>
 #include <list>
 #include <unordered_map>

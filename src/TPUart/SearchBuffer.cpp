@@ -1,6 +1,10 @@
 #pragma GCC optimize("O3")
 #include "TPUart/SearchBuffer.h"
+#if defined(ESP_PLATFORM)
+#include "openknx_espidf_compat.h"
+#else
 #include <Arduino.h>
+#endif
 #include <cstring>
 
 namespace TPUart

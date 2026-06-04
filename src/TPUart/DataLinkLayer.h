@@ -1,5 +1,9 @@
 #pragma once
+#if defined(ESP_PLATFORM)
+#include "openknx_espidf_compat.h"
+#else
 #include <Arduino.h>
+#endif
 #include <deque>
 #include <functional>
 #include <vector>
@@ -14,7 +18,7 @@
 #include "TPUart/Transmitter.h"
 #include "TPUart/Types.h"
 
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #endif
@@ -65,7 +69,7 @@ namespace TPUart
         mutex_t _rxLock;
         mutex_t _txLock;
         mutex_t _test;
-#elif defined(ARDUINO_ARCH_ESP32)
+#elif defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
         SemaphoreHandle_t _rxLock;
         SemaphoreHandle_t _txLock;
 #endif
