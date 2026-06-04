@@ -23,9 +23,9 @@ namespace TPUart
         void clear();
         bool move(const size_t size);
         const char *get();
-        const size_t position();
-        const size_t timeout();
-        const char get(size_t position);
+        size_t position();
+        size_t timeout();
+        char get(size_t position);
         void timeout(size_t position);
         Frame &frame();
         bool empty();

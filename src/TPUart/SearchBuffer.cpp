@@ -55,17 +55,17 @@ namespace TPUart
         return _buffer;
     }
 
-    const char SearchBuffer::get(size_t position)
+    char SearchBuffer::get(size_t position)
     {
         return _buffer[position];
     }
 
-    const size_t SearchBuffer::position()
+    size_t SearchBuffer::position()
     {
         return _position;
     }
 
-    const size_t SearchBuffer::timeout()
+    size_t SearchBuffer::timeout()
     {
         return _timeout;
     }

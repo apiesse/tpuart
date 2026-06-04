@@ -11,6 +11,7 @@ namespace TPUart
             bool _running = false;
 
           public:
+            virtual ~Abstract() = default;
             virtual void flush() = 0;
             virtual void begin(int baud) = 0;
             virtual void end() = 0;
