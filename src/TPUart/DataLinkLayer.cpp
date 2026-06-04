@@ -479,7 +479,8 @@ namespace TPUart
             else if (_bcuType == BCU_TPUART2)
             {
                 _interface->write(U_TPUART2_SET_REPETITION_REQ);
-                _interface->write(((_repetitions & 0xF0) << 1) || (_repetitions & 0x0F));
+                const uint8_t tpuart2Repetitions = (uint8_t)(((_repetitions & 0x70) << 1) | (_repetitions & 0x0F));
+                _interface->write(tpuart2Repetitions);
             }
         }
 
