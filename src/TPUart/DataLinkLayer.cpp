@@ -122,7 +122,8 @@ namespace TPUart
             if (frameSize > TPUART_RX_SEARCH_BUFFER_SIZE)
             {
                 rxUnlock();
-                printError("RX frame buffer desynced: frameSize %u exceeds max %u", frameSize, TPUART_RX_SEARCH_BUFFER_SIZE);
+                printError("RX frame buffer desynced: frameSize %u exceeds max %u",
+                           (unsigned int)frameSize, (unsigned int)TPUART_RX_SEARCH_BUFFER_SIZE);
                 reset();
                 return;
             }
@@ -138,6 +139,14 @@ namespace TPUart
             asm volatile("" ::: "memory");
             _rxFrameBufferEntries = _rxFrameBufferEntries - 1;
             rxUnlock();
+
+            if (!frame.hasData() || frame.size() == 0)
+            {
+                /* Allocation failure or a length field inconsistent with the copied
+                   RX entry. The complete queue entry has already been consumed. */
+                printError("Discarding invalid buffered frame (size %u)", (unsigned int)frameSize);
+                continue;
+            }
 
             run++;
 
@@ -279,8 +288,11 @@ namespace TPUart
     void DataLinkLayer::process()
     {
         if (!_initialized) return;
-        if (_bcuState == BCU_UNINITIALIZED && _interface->available())
+        if (_bcuState == BCU_UNINITIALIZED)
         {
+            /* Initialisation sends U_RESET_REQ. Waiting for RX availability first
+               deadlocks recovery after an UART install/config failure or a late
+               TPUART attachment: no byte can arrive until begin()+reset retries. */
             if (millis() - _lastTryInitialize > 1000) tryInitialize();
         }
 
@@ -676,11 +688,11 @@ namespace TPUart
         while (_receiver._discardedBytes.size())
         {
             char hexBuffer[4];
-            sprintf(hexBuffer, " %02X", _receiver._discardedBytes.pop());
+            sprintf(hexBuffer, " %02X", (unsigned int)(unsigned char)_receiver._discardedBytes.pop());
             buffer += hexBuffer;
         }
 
-        printError(" %u Bytes are discarded! (%s )", size, buffer.c_str());
+        printError(" %u Bytes are discarded! (%s )", (unsigned int)size, buffer.c_str());
 
         _lastDiscardedBytes = _statistics.getRxDiscardedBytes();
         _lastDiscardedMessage = millis();

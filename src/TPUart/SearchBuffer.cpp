@@ -11,7 +11,7 @@ namespace TPUart
 {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wuninitialized"
-    SearchBuffer::SearchBuffer() : _frame(_buffer)
+    SearchBuffer::SearchBuffer() : _frame(_buffer, TPUART_RX_SEARCH_BUFFER_SIZE, false)
     {
         memset(_buffer, 0, TPUART_RX_SEARCH_BUFFER_SIZE);
     }

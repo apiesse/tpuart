@@ -1,11 +1,19 @@
 #pragma once
 #include "TPUart/Types.h"
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 // #ifdef TPUART_PRINT
 #include <string>
 // #endif
+
+#ifndef TPUART_FRAME_ALLOC
+#define TPUART_FRAME_ALLOC(size) malloc(size)
+#endif
+#ifndef TPUART_FRAME_FREE
+#define TPUART_FRAME_FREE(ptr) free(ptr)
+#endif
 
 // DLL services (device is transparent)
 #define L_DATA_STANDARD_IND 0x90
@@ -41,23 +49,100 @@ namespace TPUart
     class Frame
     {
       private:
-        const char *_data;
+        const char *_data = nullptr;
+        // Zero means that the caller owns the storage and did not provide a bound.
+        // Receive-side buffers use the array constructor or the copying constructor,
+        // so all lengths derived from the wire are checked against a real capacity.
+        size_t _capacity = 0;
         char _flags = 0;
         bool _deleteData = false;
 
+        bool hasBytes(size_t count) const
+        {
+            return _data != nullptr && (_capacity == 0 || count <= _capacity);
+        }
+
       public:
+        /**
+         * Legacy unbounded borrowed view. Use only for trusted, locally built
+         * storage; wire input must use Frame(data, capacity, deleteData).
+         * Kept for source compatibility with existing integrations.
+         */
         Frame(const char *data) : _data(data) {}
+        Frame(const char *data, size_t capacity, bool deleteData)
+            : _data(data), _capacity(capacity), _deleteData(deleteData) {}
         Frame(const char *data, unsigned short size)
         {
+            if (data == nullptr || size == 0)
+                return;
+
+            char* copy = (char*)TPUART_FRAME_ALLOC(size);
+            if (copy == nullptr)
+                return;
+
+            memcpy(copy, data, size);
+            _data = copy;
+            _capacity = size;
             _deleteData = true;
-            _data = (const char *)malloc(size);
-            memcpy((char *)_data, data, size);
         }
+        /**
+         * Legacy unbounded ownership overload. Use only when the allocation is
+         * trusted and its complete frame size is known to be present. New code
+         * should use Frame(data, capacity, deleteData).
+         */
         Frame(const char *data, bool deleteData) : _data(data), _deleteData(deleteData) {}
+
+        Frame(const Frame& other) : _capacity(other._capacity), _flags(other._flags)
+        {
+            if (!other._deleteData || other._data == nullptr)
+            {
+                _data = other._data;
+                return;
+            }
+
+            const size_t copySize = other._capacity != 0 ? other._capacity : other.size();
+            char* copy = copySize != 0 ? (char*)TPUART_FRAME_ALLOC(copySize) : nullptr;
+            if (copy != nullptr)
+            {
+                memcpy(copy, other._data, copySize);
+                _data = copy;
+                _capacity = copySize;
+                _deleteData = true;
+            }
+        }
+
+        Frame& operator=(const Frame& other)
+        {
+            if (this == &other)
+                return *this;
+            if (_deleteData)
+                TPUART_FRAME_FREE((char*)_data);
+
+            _data = nullptr;
+            _capacity = other._capacity;
+            _flags = other._flags;
+            _deleteData = false;
+            if (!other._deleteData || other._data == nullptr)
+            {
+                _data = other._data;
+                return *this;
+            }
+
+            const size_t copySize = other._capacity != 0 ? other._capacity : other.size();
+            char* copy = copySize != 0 ? (char*)TPUART_FRAME_ALLOC(copySize) : nullptr;
+            if (copy != nullptr)
+            {
+                memcpy(copy, other._data, copySize);
+                _data = copy;
+                _capacity = copySize;
+                _deleteData = true;
+            }
+            return *this;
+        }
 
         ~Frame()
         {
-            if (_deleteData) free((char *)_data);
+            if (_deleteData) TPUART_FRAME_FREE((char *)_data);
         }
 
         // Frame(const Frame &other)
@@ -77,16 +162,18 @@ namespace TPUart
             unsigned short polynomial = 0x1021;
 
             const unsigned short s = size();
+            if (s == 0 || !hasBytes((size_t)s + 2))
+                return false;
             for (unsigned short i = 0; i < s; i++)
             {
-                crc ^= (_data[i] << 8);
+                crc ^= ((unsigned char)_data[i] << 8);
                 for (int j = 0; j < 8; j++)
                     if (crc & 0x8000)
                         crc = (crc << 1) ^ polynomial;
                     else
                         crc <<= 1;
             }
-            return ((_data[s] << 8) + _data[s + 1]) == crc;
+            return (((unsigned char)_data[s] << 8) + (unsigned char)_data[s + 1]) == crc;
         }
 
         bool checkCRC16SPI()
@@ -96,16 +183,23 @@ namespace TPUart
             unsigned short polynomial = 0x1021;
 
             const unsigned short s = size();
+            if (s == 0 || !hasBytes((size_t)s + 2))
+                return false;
             for (unsigned short i = 0; i < s; i++)
             {
-                crc ^= (_data[i] << 8);
+                crc ^= ((unsigned char)_data[i] << 8);
                 for (int j = 0; j < 8; j++)
                     if (crc & 0x8000)
                         crc = (crc << 1) ^ polynomial;
                     else
                         crc <<= 1;
             }
-            return ((_data[s] << 8) + _data[s + 1]) == crc;
+            return (((unsigned char)_data[s] << 8) + (unsigned char)_data[s + 1]) == crc;
+        }
+
+        bool hasData() const
+        {
+            return _data != nullptr;
         }
 
         const char *data()
@@ -115,12 +209,15 @@ namespace TPUart
 
         char data(unsigned short pos)
         {
-            return _data[pos];
+            return hasBytes((size_t)pos + 1) ? _data[pos] : 0;
         }
 
         unsigned short destination()
         {
-            return isExtended() ? (_data[4] << 8) + _data[5] : (_data[3] << 8) + _data[4];
+            if (!hasBytes(isExtended() ? 6 : 5))
+                return 0;
+            return isExtended() ? ((unsigned char)_data[4] << 8) + (unsigned char)_data[5]
+                                : ((unsigned char)_data[3] << 8) + (unsigned char)_data[4];
         }
 
         unsigned short flags()
@@ -136,24 +233,27 @@ namespace TPUart
             return isExtended() ? 9 : 8;
         }
 
-        bool isExtended()
+        bool isExtended() const
         {
-            return (_data[0] & 0xD3) == 0x10;
+            return hasBytes(1) && (_data[0] & 0xD3) == 0x10;
         }
 
         bool isFrame()
         {
-            return ((_data[0] & L_DATA_MASK) == L_DATA_STANDARD_IND || (_data[0] & L_DATA_MASK) == L_DATA_EXTENDED_IND);
+            return hasBytes(1) && ((_data[0] & L_DATA_MASK) == L_DATA_STANDARD_IND || (_data[0] & L_DATA_MASK) == L_DATA_EXTENDED_IND);
         }
 
         bool isGroupAddress()
         {
-            return isExtended() ? (_data[1] >> 7) & 0b1 : (_data[5] >> 7) & 0b1;
+            if (!hasBytes(isExtended() ? 2 : 6))
+                return false;
+            return isExtended() ? ((unsigned char)_data[1] >> 7) & 0b1
+                                : ((unsigned char)_data[5] >> 7) & 0b1;
         }
 
         bool isRepeated()
         {
-            return !(_data[0] & 0b100000);
+            return hasBytes(1) && !(_data[0] & 0b100000);
         }
 
         bool isFiltered()
@@ -169,18 +269,32 @@ namespace TPUart
         /*
          * Returns the total size of the frame, including the metadata and apdu.
          */
-        unsigned short size()
+        unsigned short size() const
         {
-            return metadataSize() + apduSize();
+            if (!hasBytes(1))
+                return 0;
+
+            const bool extended = isExtended();
+            if (!hasBytes(extended ? 7 : 6))
+                return 0;
+
+            const unsigned short result = (extended ? 9U : 8U)
+                + (extended ? (unsigned char)_data[6] : ((unsigned char)_data[5] & 0x0F));
+            return hasBytes(result) ? result : 0;
         }
 
         unsigned short source()
         {
-            return isExtended() ? (_data[2] << 8) + _data[3] : (_data[1] << 8) + _data[2];
+            if (!hasBytes(isExtended() ? 4 : 3))
+                return 0;
+            return isExtended() ? ((unsigned char)_data[2] << 8) + (unsigned char)_data[3]
+                                : ((unsigned char)_data[1] << 8) + (unsigned char)_data[2];
         }
 
         unsigned char apduSize()
         {
+            if (!hasBytes(isExtended() ? 7 : 6))
+                return 0;
             return isExtended() ? (unsigned char)_data[6] : (unsigned char)(_data[5] & 0x0F);
         }
 
@@ -191,7 +305,11 @@ namespace TPUart
 
         bool isValid(bool extended = false)
         {
-            const unsigned short s = size() - 1;
+            (void)extended;
+            const unsigned short frameSize = size();
+            if (frameSize == 0)
+                return false;
+            const unsigned short s = frameSize - 1;
             return _data[s] == calcCRC8();
         }
 
@@ -204,7 +322,10 @@ namespace TPUart
         char calcCRC8()
         {
             char chksum = 0;
-            const unsigned short s = size() - 1;
+            const unsigned short frameSize = size();
+            if (frameSize == 0)
+                return 0;
+            const unsigned short s = frameSize - 1;
             for (unsigned short i = 0; i < s; i++)
                 chksum ^= _data[i];
             return (char)~chksum;
@@ -278,11 +399,18 @@ namespace TPUart
 
         /**
          * Creates a buffer and converts the TPFrame into a CemiFrame.
-         * Important: After processing (i.e. also after using the CemiFrame), the reference must be released manually.
+         * Important: After processing (i.e. also after using the CemiFrame), the reference must be released with
+         * freeCemiData().  This keeps allocation and deallocation paired when an integrator overrides the allocator.
          */
         char *cemiData()
         {
-            char *cemiBuffer = (char *)malloc(cemiSize());
+            const unsigned short outputSize = cemiSize();
+            if (size() == 0 || outputSize == 0)
+                return nullptr;
+
+            char *cemiBuffer = (char *)TPUART_FRAME_ALLOC(outputSize);
+            if (cemiBuffer == nullptr)
+                return nullptr;
 
             // Das CEMI erwartet die Daten im Extended format inkl. zwei zusätzlicher Bytes am Anfang.
             cemiBuffer[0] = 0x29;
@@ -301,6 +429,12 @@ namespace TPUart
             }
 
             return cemiBuffer;
+        }
+
+        static void freeCemiData(char* data)
+        {
+            if (data != nullptr)
+                TPUART_FRAME_FREE(data);
         }
 
         // #ifdef TPUART_PRINT
@@ -348,7 +482,7 @@ namespace TPUart
             for (size_t i = 0; i < size(); i++)
             {
                 if (i) result.push_back(' ');
-                std::sprintf(hexStr, "%02X", _data[i]);
+                std::sprintf(hexStr, "%02X", (unsigned int)(unsigned char)_data[i]);
                 result.append(hexStr);
             }
             result.append(" ) [");

@@ -3,6 +3,7 @@
 
 #include "TPUart/Interface/Abstract.h"
 #include "driver/uart.h"
+#include "freertos/queue.h"
 
 #include <functional>
 
@@ -28,12 +29,15 @@ namespace TPUart
             void registerCallback(std::function<bool()> callback) override;
 
           private:
+            void drainEvents();
+
             uart_port_t _uart_num;
             int _rx_pin;
             int _tx_pin;
             int _baud;
             bool _installed = false;
             volatile bool _overflow = false;
+            QueueHandle_t _event_queue = nullptr;
             std::function<bool()> _callback;
         };
     }
