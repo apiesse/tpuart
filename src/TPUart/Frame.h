@@ -49,6 +49,9 @@ namespace TPUart
     class Frame
     {
       private:
+        friend class Transmitter;
+        Frame *_txResultNext = nullptr;
+        bool _txResultSuccess = false;
         const char *_data = nullptr;
         // Zero means that the caller owns the storage and did not provide a bound.
         // Receive-side buffers use the array constructor or the copying constructor,
@@ -412,6 +415,15 @@ namespace TPUart
             if (cemiBuffer == nullptr)
                 return nullptr;
 
+            fillCemiData(cemiBuffer, outputSize);
+            return cemiBuffer;
+        }
+
+        // Allocation-free conversion for delivery of mandatory TX completions.
+        bool fillCemiData(char *cemiBuffer, size_t capacity)
+        {
+            if (!cemiBuffer || size() == 0 || capacity < cemiSize()) return false;
+
             // Das CEMI erwartet die Daten im Extended format inkl. zwei zusätzlicher Bytes am Anfang.
             cemiBuffer[0] = 0x29;
             cemiBuffer[1] = 0x0;
@@ -428,7 +440,7 @@ namespace TPUart
                 memcpy(cemiBuffer + 9, _data + 6, cemiBuffer[8] + 2 - 1); // -1 without CRC
             }
 
-            return cemiBuffer;
+            return true;
         }
 
         static void freeCemiData(char* data)

@@ -82,10 +82,10 @@ namespace TPUart
         {
             _lastReceivedTime = millis();
 
-            const uint start = micros();
+            const unsigned int start = micros();
             _dll._statistics.incrementRxReceivedBytes();
             pushSearchBuffer(value);
-            uint duration = micros() - start;
+            unsigned int duration = micros() - start;
             _dll._statsDuration += duration;
             _dll._statsDurationCount = _dll._statsDurationCount + 1;
             if (duration > _dll._statsDurationMax) _dll._statsDurationMax = duration;
@@ -110,12 +110,12 @@ namespace TPUart
         bool acknowledge = false;
         if ((value & L_DATA_CON_MASK) == L_DATA_CON)
         {
-            if ((value ^ L_DATA_CON_MASK) >> 7)
+            if ((static_cast<unsigned char>(value) & 0x80) != 0)
             {
                 _searchBuffer.frame().setAcknowledge();
             }
             acknowledge = true;
-            _dll.getTransmitter().finalize();
+            _dll.getTransmitter().finalize((static_cast<unsigned char>(value) & 0x80) != 0);
         }
         else if ((value & L_ACKN_MASK) == L_ACKN_IND)
         {
@@ -189,7 +189,7 @@ namespace TPUart
         while (_searchBuffer.position())
         {
             char value = _searchBuffer.get(0);
-            //_dll.printError("IVB1: %02X  - H:%u I:%u P:%u T:%u A:%u", value, x, _invalid, _searchBuffer.position(), _searchBuffer.timeout(), (uint)_awaitBytes);
+            //_dll.printError("IVB1: %02X  - H:%u I:%u P:%u T:%u A:%u", value, x, _invalid, _searchBuffer.position(), _searchBuffer.timeout(), (unsigned int)_awaitBytes);
             _lastDiscarded = millis();
             asm volatile("" ::: "memory");
             _discardedBytes.push(value);
@@ -379,7 +379,7 @@ namespace TPUart
         }
         else if ((value & L_DATA_CON_MASK) == L_DATA_CON)
         {
-            _dll.getTransmitter().finalize();
+            _dll.getTransmitter().finalize((static_cast<unsigned char>(value) & 0x80) != 0);
         }
 
         else if ((value & L_ACKN_MASK) == L_ACKN_IND)

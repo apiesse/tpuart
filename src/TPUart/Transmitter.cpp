@@ -37,6 +37,13 @@ namespace TPUart
     Transmitter::~Transmitter()
     {
         reset();
+        // Owning DLL callbacks may already have been destroyed.
+        while (_resultHead)
+        {
+            Frame *frame = _resultHead;
+            _resultHead = frame->_txResultNext;
+            delete frame;
+        }
     }
 
     /**
@@ -46,9 +53,46 @@ namespace TPUart
      * await a response. It is typically called when the transmission process
      * is complete.
      */
-    void Transmitter::finalize()
+    void Transmitter::completeLocked(Frame *frame, bool success)
     {
-        if (_state == TX_AWAIT) _state = TX_IDLE;
+        if (!frame) return;
+        frame->_txResultNext = nullptr;
+        frame->_txResultSuccess = success;
+        if (_resultTail) _resultTail->_txResultNext = frame;
+        else _resultHead = frame;
+        _resultTail = frame;
+    }
+
+    void Transmitter::finalize(bool success)
+    {
+        _dll.txLock(true);
+        if (_state == TX_AWAIT)
+        {
+            completeLocked(_frame, success);
+            _frame = nullptr;
+            _state = TX_IDLE;
+        }
+        _dll.txUnlock();
+    }
+
+    void Transmitter::processResults()
+    {
+        // Detach before callbacks: a callback may enqueue or reset the transmitter.
+        _dll.txLock(true);
+        Frame *head = _resultHead;
+        _resultHead = _resultTail = nullptr;
+        _dll.txUnlock();
+        while (head)
+        {
+            Frame *frame = head;
+            head = frame->_txResultNext;
+            _dll.txLock(true);
+            --_outstanding;
+            _dll.txUnlock();
+            if (_dll._callbackTransmitResult)
+                _dll._callbackTransmitResult(*frame, frame->_txResultSuccess);
+            delete frame;
+        }
     }
 
     /**
@@ -70,16 +114,10 @@ namespace TPUart
     {
         if (_state != TX_IDLE) return;
         if (_dll._receiver._invalid) return;
-        if (_queue.empty()) return;
-
-        if (_frame != nullptr)
-        {
-            delete _frame;
-            _frame = nullptr;
-            _transmitPos = 0;
-            _transmitOffset = 0;
-        }
-
+        _dll.txLock(true);
+        if (_state != TX_IDLE || _queue.empty()) { _dll.txUnlock(); return; }
+        _transmitPos = 0;
+        _transmitOffset = 0;
         _frame = _queue.front();
         _queue.pop();
         _dll._statistics.incrementTxFrames();
@@ -87,13 +125,15 @@ namespace TPUart
         // Fallback if the frame is too big - Filtered on DLL, too
         if (_dll._bcuType == BCU_TPUART2 && _frame->size() > 64)
         {
-            delete _frame;
+            completeLocked(_frame, false);
             _frame = nullptr;
+            _dll.txUnlock();
             return;
         }
 
         asm volatile("" ::: "memory");
         _state = TX_TRANSMIT;
+        _dll.txUnlock();
     }
 
     /**
@@ -130,7 +170,7 @@ namespace TPUart
         // if (!_awaitResponse) return;
         if (!_dll.txLock()) return;
         // Double check
-        if (_state != TX_TRANSMIT) return;
+        if (_state != TX_TRANSMIT) { _dll.txUnlock(); return; }
 
         const unsigned short size = _frame->size();
         // if (_transmitPos >= size)
@@ -145,22 +185,30 @@ namespace TPUart
         const unsigned char position = (_transmitPos & 0x3F);
 
         // The BCU keeps the offset until it is changed, so resend it only when it changes.
+        bool written = true;
         if (offset != _transmitOffset)
         {
-            _dll._interface->write(U_L_DATA_OFFSET_REQ | offset);
+            written = _dll._interface->write(U_L_DATA_OFFSET_REQ | offset);
             _transmitOffset = offset;
         }
 
         if (last) // Last byte (Checksum) - the transmit
         {
-            _dll._interface->write(U_L_DATA_END_REQ | position);
+            written = written && _dll._interface->write(U_L_DATA_END_REQ | position);
         }
         else
         {
-            _dll._interface->write(U_L_DATA_START_REQ | position);
+            written = written && _dll._interface->write(U_L_DATA_START_REQ | position);
         }
 
-        _dll._interface->write(_frame->data(_transmitPos));
+        written = written && _dll._interface->write(_frame->data(_transmitPos));
+        if (!written)
+        {
+            _dll.txUnlock();
+            // A partially written command cannot safely be continued.
+            _dll.reset();
+            return;
+        }
         if (last)
         {
             resetWatchdogTimer();
@@ -185,9 +233,11 @@ namespace TPUart
      */
     bool Transmitter::pushQueue(Frame *frame)
     {
-        if (_queue.size() >= _maxQueueSize) return false;
-
+        _dll.txLock(true);
+        if (!frame || _outstanding >= _maxQueueSize) { _dll.txUnlock(); return false; }
         _queue.push(frame);
+        ++_outstanding;
+        _dll.txUnlock();
         return true;
     }
 
@@ -229,13 +279,13 @@ namespace TPUart
         _dll.txLock(true);
         while (!_queue.empty())
         {
-            delete _queue.front();
+            completeLocked(_queue.front(), false);
             _queue.pop();
         }
 
         if (_frame != nullptr)
         {
-            delete _frame;
+            completeLocked(_frame, false);
             _frame = nullptr;
             _transmitPos = 0;
             _transmitOffset = 0;

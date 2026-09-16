@@ -1,3 +1,4 @@
+#if defined(ESP_PLATFORM) && !defined(ARDUINO)
 #include "TPUart/Interface/EspIdf.h"
 
 #include "esp_log.h"
@@ -213,3 +214,5 @@ namespace TPUart
         }
     }
 }
+
+#endif // native ESP-IDF only

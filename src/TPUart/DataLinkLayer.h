@@ -1,5 +1,5 @@
 #pragma once
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) && !defined(ARDUINO)
 #include "openknx_espidf_compat.h"
 #else
 #include <Arduino.h>
@@ -82,6 +82,7 @@ namespace TPUart
         SystemState _systemState;
 
         std::vector<std::function<void(Frame &)>> _callbacksReceivedFrame;
+        std::function<void(Frame &, bool)> _callbackTransmitResult;
         std::function<AcknowledgeType(unsigned short, bool)> _callbackCheckAcknowledge;
         std::function<void(const char *, bool error)> _callbackMessage;
 
@@ -102,7 +103,7 @@ namespace TPUart
         void processRequestState();
 
         void tryInitialize();
-        bool tryInitialize(uint baudrate);
+        bool tryInitialize(unsigned int baudrate);
 
         void exitBusyModeTimer();
         void setBCUState(BcuState state, int baudrate = 0);
@@ -122,6 +123,8 @@ namespace TPUart
 
         void registerMessage(std::function<void(const char *, bool)> callback);
         void registerReceivedFrame(std::function<void(Frame &)> callback);
+        // Exactly one result per accepted frame. The frame is borrowed until return.
+        void registerTransmitResult(std::function<void(Frame &, bool)> callback);
         void registerCheckAcknowledge(std::function<AcknowledgeType(unsigned short, bool)> callback);
 
         bool processReceviedByte();
@@ -150,10 +153,10 @@ namespace TPUart
         bool isMonitoring() const;
         bool isConnected() const;
 
-        volatile uint _statsDurationMax = 0;
-        volatile uint _statsDurationMin = 0;
-        volatile uint _statsDuration = 0;
-        volatile uint _statsDurationCount = 0;
+        volatile unsigned int _statsDurationMax = 0;
+        volatile unsigned int _statsDurationMin = 0;
+        volatile unsigned int _statsDuration = 0;
+        volatile unsigned int _statsDurationCount = 0;
     };
 
 } // namespace TPUart

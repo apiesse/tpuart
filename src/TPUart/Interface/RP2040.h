@@ -23,8 +23,8 @@ namespace TPUart
             dma_channel_config _dmaConfig;
 
             volatile uint8_t __attribute__((aligned(TPUART_RP2040_BUFFER_SIZE))) _dmaBuffer[TPUART_RP2040_BUFFER_SIZE] = {};
-            volatile uint _dmaReaderCount = 0;
-            volatile uint _dmaRestartDiff = 0;
+            volatile unsigned int _dmaReaderCount = 0;
+            volatile unsigned int _dmaRestartDiff = 0;
 
             pin_size_t _rx, _tx;
             gpio_function_t _rxRestore, _txRestore;
@@ -39,8 +39,8 @@ namespace TPUart
             ~RP2040();
             void begin(int baud);
             void end();
-            uint dmaTransferCount();
-            uint dmaReaderCount();
+            unsigned int dmaTransferCount();
+            unsigned int dmaReaderCount();
             bool available() override;
             bool availableForWrite() override;
             bool write(char value) override;

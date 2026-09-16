@@ -4,7 +4,7 @@
 #include "TPUart/RingBuffer.h"
 #include "TPUart/SearchBuffer.h"
 #include "TPUart/Types.h"
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) && !defined(ARDUINO)
 #include "openknx_espidf_compat.h"
 #else
 #include <Arduino.h>

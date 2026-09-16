@@ -111,12 +111,12 @@ namespace TPUart
             uart_deinit(_uart);
         }
 
-        uint RP2040::dmaTransferCount()
+        unsigned int RP2040::dmaTransferCount()
         {
             return TPUART_RP2040_TRANSFER_COUNT - dma_channel_hw_addr(_dmaChannel)->transfer_count;
         }
 
-        uint RP2040::dmaReaderCount()
+        unsigned int RP2040::dmaReaderCount()
         {
             return _dmaReaderCount;
         }
