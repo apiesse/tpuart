@@ -1,5 +1,5 @@
 #include "RepetitionFilter.h"
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) && !defined(ARDUINO)
 #include "openknx_espidf_compat.h"
 #else
 #include <Arduino.h>

@@ -23,8 +23,8 @@ namespace TPUart
         if (_bcuState != BCU_UNINITIALIZED) return;
         _lastTryInitialize = millis();
 
-        uint baudrates[2] = {19200, 38400};
-        for (uint baudrate : baudrates)
+        unsigned int baudrates[2] = {19200, 38400};
+        for (unsigned int baudrate : baudrates)
         {
             if (_bcuType == BCU_TPUART2 && baudrate != 19200) continue;
 
@@ -38,7 +38,7 @@ namespace TPUart
         }
     }
 
-    bool DataLinkLayer::tryInitialize(uint baudrate)
+    bool DataLinkLayer::tryInitialize(unsigned int baudrate)
     {
         printMessage("Try Initialize %d", baudrate);
 

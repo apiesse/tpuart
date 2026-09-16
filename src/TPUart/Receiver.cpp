@@ -82,10 +82,10 @@ namespace TPUart
         {
             _lastReceivedTime = millis();
 
-            const uint start = micros();
+            const unsigned int start = micros();
             _dll._statistics.incrementRxReceivedBytes();
             pushSearchBuffer(value);
-            uint duration = micros() - start;
+            unsigned int duration = micros() - start;
             _dll._statsDuration += duration;
             _dll._statsDurationCount = _dll._statsDurationCount + 1;
             if (duration > _dll._statsDurationMax) _dll._statsDurationMax = duration;
@@ -189,7 +189,7 @@ namespace TPUart
         while (_searchBuffer.position())
         {
             char value = _searchBuffer.get(0);
-            //_dll.printError("IVB1: %02X  - H:%u I:%u P:%u T:%u A:%u", value, x, _invalid, _searchBuffer.position(), _searchBuffer.timeout(), (uint)_awaitBytes);
+            //_dll.printError("IVB1: %02X  - H:%u I:%u P:%u T:%u A:%u", value, x, _invalid, _searchBuffer.position(), _searchBuffer.timeout(), (unsigned int)_awaitBytes);
             _lastDiscarded = millis();
             asm volatile("" ::: "memory");
             _discardedBytes.push(value);
