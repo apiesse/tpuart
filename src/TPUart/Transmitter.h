@@ -17,6 +17,10 @@ namespace TPUart
         unsigned long _maxQueueSize;
         volatile TxState _state; // written by finalize() (RX path), read by the main-loop TX path -> matches Receiver::_state
         Frame *_frame = nullptr;
+        Frame *_resultHead = nullptr;
+        Frame *_resultTail = nullptr;
+        size_t _outstanding = 0;
+        void completeLocked(Frame *frame, bool success);
 
       public:
         std::queue<Frame *> _queue;
@@ -24,7 +28,9 @@ namespace TPUart
         ~Transmitter();
 
         bool transmit(const char *data, size_t size);
-        void finalize();
+        void finalize(bool success = true);
+        // Run only from the ordinary processing task, never from UART callbacks.
+        void processResults();
         void processWatchdog();
 
         bool pushQueue(Frame *frame);

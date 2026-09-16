@@ -128,7 +128,7 @@ namespace TPUart
                 return;
             }
 
-            char frameData[frameSize] = {};
+            char frameData[TPUART_RX_SEARCH_BUFFER_SIZE] = {};
 
             for (size_t i = 0; i < frameSize; i++)
                 frameData[i] = _rxFrameBuffer.pop();
@@ -261,10 +261,14 @@ namespace TPUart
     {
         _initialized = false;
         _bcuState = BCU_UNINITIALIZED;
-        if (deleteUart && _interface == nullptr)
+        _transmitter.reset();
+        _transmitter.processResults();
+        if (_interface) _interface->end();
+        if (deleteUart && _interface != nullptr)
         {
             delete _interface;
         }
+        _interface = nullptr;
     }
 
     /*
@@ -287,6 +291,7 @@ namespace TPUart
 
     void DataLinkLayer::process()
     {
+        _transmitter.processResults();
         if (!_initialized) return;
         if (_bcuState == BCU_UNINITIALIZED)
         {
@@ -312,6 +317,7 @@ namespace TPUart
             processReceviedByte();
 
         _receiver.process();
+        _transmitter.processResults();
         _transmitter.processQueue();
 
         start = millis();
@@ -343,6 +349,12 @@ namespace TPUart
         }
 
         processWatchdog();
+        _transmitter.processResults();
+    }
+
+    void DataLinkLayer::registerTransmitResult(std::function<void(Frame &, bool)> callback)
+    {
+        _callbackTransmitResult = callback;
     }
 
     void DataLinkLayer::processWatchdog()

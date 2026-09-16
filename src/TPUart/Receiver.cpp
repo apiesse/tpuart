@@ -110,12 +110,12 @@ namespace TPUart
         bool acknowledge = false;
         if ((value & L_DATA_CON_MASK) == L_DATA_CON)
         {
-            if ((value ^ L_DATA_CON_MASK) >> 7)
+            if ((static_cast<unsigned char>(value) & 0x80) != 0)
             {
                 _searchBuffer.frame().setAcknowledge();
             }
             acknowledge = true;
-            _dll.getTransmitter().finalize();
+            _dll.getTransmitter().finalize((static_cast<unsigned char>(value) & 0x80) != 0);
         }
         else if ((value & L_ACKN_MASK) == L_ACKN_IND)
         {
@@ -379,7 +379,7 @@ namespace TPUart
         }
         else if ((value & L_DATA_CON_MASK) == L_DATA_CON)
         {
-            _dll.getTransmitter().finalize();
+            _dll.getTransmitter().finalize((static_cast<unsigned char>(value) & 0x80) != 0);
         }
 
         else if ((value & L_ACKN_MASK) == L_ACKN_IND)

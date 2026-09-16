@@ -82,6 +82,7 @@ namespace TPUart
         SystemState _systemState;
 
         std::vector<std::function<void(Frame &)>> _callbacksReceivedFrame;
+        std::function<void(Frame &, bool)> _callbackTransmitResult;
         std::function<AcknowledgeType(unsigned short, bool)> _callbackCheckAcknowledge;
         std::function<void(const char *, bool error)> _callbackMessage;
 
@@ -122,6 +123,8 @@ namespace TPUart
 
         void registerMessage(std::function<void(const char *, bool)> callback);
         void registerReceivedFrame(std::function<void(Frame &)> callback);
+        // Exactly one result per accepted frame. The frame is borrowed until return.
+        void registerTransmitResult(std::function<void(Frame &, bool)> callback);
         void registerCheckAcknowledge(std::function<AcknowledgeType(unsigned short, bool)> callback);
 
         bool processReceviedByte();

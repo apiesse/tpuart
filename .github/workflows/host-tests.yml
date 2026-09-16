@@ -1,0 +1,15 @@
+name: Host behavioral tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S test -B build/host -DENABLE_SANITIZERS=ON -DCMAKE_CXX_COMPILER=clang++
+      - run: cmake --build build/host -j2
+      - run: ctest --test-dir build/host --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
