@@ -1,4 +1,5 @@
 #include "TPUart/DataLinkLayer.h"
+#include <algorithm>
 #include <cassert>
 #include <deque>
 #include <vector>
@@ -11,6 +12,7 @@ class Uart : public TPUart::Interface::Abstract
 {
 public:
     std::deque<int> rx;
+    std::vector<uint8_t> written;
     bool fail = false;
     bool dataNext = false;
     void flush() override { rx.clear(); }
@@ -21,6 +23,7 @@ public:
     bool write(char value) override
     {
         if (fail) return false;
+        written.push_back(static_cast<uint8_t>(value));
         if (dataNext) dataNext = false;
         else if ((static_cast<unsigned char>(value) & 0x80) != 0) dataNext = true;
         else if (value == U_RESET_REQ) rx.push_back(U_RESET_IND);
@@ -42,8 +45,36 @@ static TPUart::Frame *frame()
     return new TPUart::Frame(bytes, (unsigned short)sizeof(bytes));
 }
 
+static void checkAddressProgramming()
+{
+    for (const auto type : {TPUart::BCU_NCN5120, TPUart::BCU_TPUART2})
+    {
+        Uart uart;
+        TPUart::DataLinkLayer dll;
+        dll.begin(type, &uart);
+        dll.process();
+        const uint8_t command = type == TPUart::BCU_NCN5120
+            ? U_NCN5120_SET_ADDRESS_REQ : U_TPUART2_SET_ADDRESS_REQ;
+        for (const uint16_t address : {0x110AU, 0x7FFFU, 0x8000U, 0xFFFAU})
+        {
+            uart.written.clear();
+            dll.setOwnAddress(address);
+            std::vector<uint8_t> expected{command,
+                static_cast<uint8_t>(address >> 8), static_cast<uint8_t>(address)};
+            if (type == TPUart::BCU_NCN5120) expected.push_back(0xFF);
+            assert(std::search(uart.written.begin(), uart.written.end(),
+                               expected.begin(), expected.end()) != uart.written.end());
+        }
+        uart.written.clear();
+        dll.setOwnAddress(0);
+        assert(std::find(uart.written.begin(), uart.written.end(), command) == uart.written.end());
+        dll.end(false);
+    }
+}
+
 int main()
 {
+    checkAddressProgramming();
     Uart uart;
     TPUart::DataLinkLayer dll;
     std::vector<bool> results;

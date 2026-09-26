@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #endif
 #include <deque>
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -41,7 +42,7 @@ namespace TPUart
       private:
         bool _initialized = false;
         char _repetitions = 0b00110011; // 0-3 Nack (Default 3) // 5-7 Busy (Default 3)
-        short _ownAddress = 0;
+        uint16_t _ownAddress = 0;
         volatile bool _uReset = false;
         volatile char _uState = 0;
         volatile bool _modeAutoAcknowlage = false;
@@ -146,7 +147,7 @@ namespace TPUart
         bool powerControl(bool state);
         bool stopMode(bool state);
         bool busyMode(bool state);
-        void setOwnAddress(short address);
+        void setOwnAddress(uint16_t address);
         bool startMonitoring();
         BcuState getBcuState();
         const char *getBcuStateInfo();

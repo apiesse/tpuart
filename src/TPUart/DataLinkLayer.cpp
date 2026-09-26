@@ -727,7 +727,7 @@ namespace TPUart
      * Set the own address of the BCU.
      * This is needed so that the BCU independently acknowledges frames when they are addressed to its own address.
      */
-    void DataLinkLayer::setOwnAddress(short address)
+    void DataLinkLayer::setOwnAddress(uint16_t address)
     {
         _ownAddress = address;
         applyConfiguration(); // apply new address, if datalinklayer is already initialized
