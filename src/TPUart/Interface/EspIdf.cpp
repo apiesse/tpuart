@@ -16,7 +16,7 @@ static const char* TAG = "tpuart_espidf";
 #endif
 
 #ifndef TPUART_ESPIDF_EVENT_QUEUE_SIZE
-#define TPUART_ESPIDF_EVENT_QUEUE_SIZE 32
+#define TPUART_ESPIDF_EVENT_QUEUE_SIZE 64
 #endif
 
 namespace TPUart
@@ -70,6 +70,16 @@ namespace TPUart
             err = uart_param_config(_uart_num, &uart_config);
             if (err == ESP_OK)
                 err = uart_set_pin(_uart_num, _tx_pin, _rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+            // Receiver::processTimeout() must not mistake bytes held in the
+            // hardware FIFO for a gap in the TP frame. IDF's defaults (120 bytes,
+            // 10 UART symbols) can expose a long frame in two batches separated
+            // by more than the receiver's 5 ms timeout at 19200 baud. Deliver
+            // each byte to the driver's ring buffer as it arrives. The event
+            // queue allows for a 20 ms poll plus a transmit slice at TP1 speed.
+            if (err == ESP_OK)
+                err = uart_set_rx_full_threshold(_uart_num, 1);
+            if (err == ESP_OK)
+                err = uart_set_rx_timeout(_uart_num, 2);
             if (err != ESP_OK)
             {
                 ESP_LOGE(TAG, "UART %d configuration failed: %s", (int)_uart_num, esp_err_to_name(err));
