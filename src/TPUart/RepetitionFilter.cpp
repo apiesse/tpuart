@@ -16,7 +16,7 @@ namespace TPUart
         const size_t s = frame.size() - 1; // without checksum
         for (size_t i = 0; i < s; i++)
         {
-            char data = frame.data(i);
+            uint8_t data = static_cast<uint8_t>(frame.data(i));
             if (i == 0) data = data | 0b100000; // retry bit
 
             crc ^= (data << 8);

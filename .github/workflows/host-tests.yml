@@ -5,9 +5,13 @@ permissions:
 jobs:
   sanitizers:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S test -B build/host -DENABLE_SANITIZERS=ON -DCMAKE_CXX_COMPILER=clang++
+      - run: cmake -S test -B build/host -DENABLE_SANITIZERS=ON -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
       - run: cmake --build build/host -j2
       - run: ctest --test-dir build/host --output-on-failure
         env:

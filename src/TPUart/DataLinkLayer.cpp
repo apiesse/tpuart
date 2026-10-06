@@ -112,7 +112,12 @@ namespace TPUart
         while (_rxFrameBufferEntries && (TPUART_MAX_RXQUEUE_TIME_PER_LOOP == 0 || run < TPUART_MAX_RXQUEUE_TIME_PER_LOOP))
         {
             rxLock(true);
-            const uint16_t bufferSize = _rxFrameBuffer.pop() + (_rxFrameBuffer.pop() << 8);
+            // Pop in wire order: operands of + need not be evaluated left first.
+            // Treat both bytes as unsigned even on hosts with signed plain char.
+            const uint8_t sizeLow = static_cast<uint8_t>(_rxFrameBuffer.pop());
+            const uint8_t sizeHigh = static_cast<uint8_t>(_rxFrameBuffer.pop());
+            const uint16_t bufferSize = static_cast<uint16_t>(sizeLow)
+                | (static_cast<uint16_t>(sizeHigh) << 8);
             const uint16_t frameSize = bufferSize - 3;
 
             // A real frame can never exceed the search buffer it was parsed from (pushRxFrameBuffer

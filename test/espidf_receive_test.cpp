@@ -2,7 +2,9 @@
 #include "TPUart/Interface/EspIdf.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <deque>
+#include <string>
 #include <vector>
 
 // Model the IDF boundary that matters to Receiver: available() sees only the
@@ -118,10 +120,12 @@ esp_err_t uart_flush_input(uart_port_t) {
     uart.wire.clear(); uart.fifo.clear(); uart.ring.clear(); return ESP_OK;
 }
 
-static std::vector<uint8_t> longFrame() {
+static std::vector<uint8_t> longFrame(size_t size = 135) {
     // Extended TP frame for the OTA DATA112 envelope (126 APDU bytes).
-    std::vector<uint8_t> bytes(135, 0xFF);
-    const uint8_t header[] = {0x30, 0x60, 0x11, 0x62, 0x11, 0x27, 126, 0x62, 0xC7};
+    assert(size >= 10 && size <= 264);
+    std::vector<uint8_t> bytes(size, 0xFF);
+    const uint8_t header[] = {0x30, 0x60, 0x11, 0x62, 0x11, 0x27,
+                             static_cast<uint8_t>(size - 9), 0x62, 0xC7};
     std::copy(std::begin(header), std::end(header), bytes.begin());
     uint8_t checksum = 0xFF;
     for (size_t i = 0; i + 1 < bytes.size(); ++i) checksum ^= bytes[i];
@@ -131,12 +135,17 @@ static std::vector<uint8_t> longFrame() {
     return bytes;
 }
 
-static void receiveLongFrame(bool legacyThresholds, int baud, unsigned phaseMs = 4) {
+static void receiveLongFrame(bool legacyThresholds, int baud, unsigned phaseMs = 4,
+                             size_t size = 135) {
     uart = MockUart{};
     nowUs = 0;
     TPUart::Interface::EspIdf interface(1, 2, 3, baud);
     TPUart::DataLinkLayer dll;
     std::vector<std::vector<uint8_t>> received;
+    std::vector<std::string> errors;
+    dll.registerMessage([&](const char *message, bool error) {
+        if (error) errors.emplace_back(message);
+    });
     dll.registerReceivedFrame([&](TPUart::Frame &frame) {
         received.emplace_back(frame.data(), frame.data() + frame.size());
     });
@@ -148,14 +157,17 @@ static void receiveLongFrame(bool legacyThresholds, int baud, unsigned phaseMs =
     interface.end();
     interface.begin(baud);
     if (legacyThresholds) { uart.fullThreshold = 120; uart.timeoutSymbols = 10; }
-    const auto bytes = longFrame();
+    const auto bytes = longFrame(size);
     const uint64_t base = nowUs;
     for (size_t i = 0; i < bytes.size(); ++i)
         uart.wire.emplace_back(base + 1000 + i * 1354, bytes[i]);
     // At 164 ms the legacy FIFO has exposed 120 bytes. At 184 ms its
     // remaining 15 bytes are still hidden, so the real Receiver marks a
     // timeout. When the tail finally arrives it discards the valid frame.
-    for (unsigned ms = phaseMs; ms <= 240 + phaseMs; ms += 20) {
+    // Keep the original 240 ms legacy reproduction, but allow the longer
+    // length-boundary frames to finish plus at least two more polling periods.
+    const uint64_t durationMs = std::max<uint64_t>(240, (1000 + (bytes.size() - 1) * 1354 + 999) / 1000 + 60);
+    for (uint64_t ms = phaseMs; ms <= durationMs + phaseMs; ms += 20) {
         nowUs = base + ms * 1000;
         dll.process();
     }
@@ -163,7 +175,15 @@ static void receiveLongFrame(bool legacyThresholds, int baud, unsigned phaseMs =
         assert(received.empty());
         assert(dll.getStatistics().getRxDiscardedBytes() > 0);
     }
-    else assert(received == std::vector<std::vector<uint8_t>>{bytes});
+    else {
+        const std::vector<std::vector<uint8_t>> expected{bytes};
+        if (received != expected) {
+            std::fprintf(stderr, "Receive mismatch: baud=%d phase=%u expected=%zu bytes received=%zu frames\n",
+                         baud, phaseMs, bytes.size(), received.size());
+            for (const auto &error : errors) std::fprintf(stderr, "%s\n", error.c_str());
+        }
+        assert(received == expected);
+    }
     assert(!interface.overflow());
     dll.end(false);
 }
@@ -213,12 +233,49 @@ static void checkEventQueueMarginAndErrors() {
     assert(!interface.overflow());
 }
 
+static void checkRepetitionWithHighBytes() {
+    auto bytes = longFrame();
+    TPUart::Frame frame(reinterpret_cast<const char *>(bytes.data()), bytes.size(), false);
+    TPUart::RepetitionFilter filter;
+    const auto updateChecksum = [&]() {
+        uint8_t checksum = 0xFF;
+        for (size_t i = 0; i + 1 < bytes.size(); ++i) checksum ^= bytes[i];
+        bytes.back() = checksum;
+        assert(frame.isValid());
+    };
+
+    // Exercise the public filter contract with CRC input bytes above 0x7f,
+    // under both signed- and unsigned-char builds. The retry bit is ignored,
+    // but a changed high-bit payload byte must produce a different identity.
+    assert(!filter.check(frame));
+    assert(filter.check(frame));
+    bytes[0] ^= 0x20;
+    updateChecksum();
+    assert(filter.check(frame));
+    bytes[12] = 0x80;
+    updateChecksum();
+    assert(!filter.check(frame));
+    assert(filter.check(frame));
+    bytes[12] = 0xFF;
+    updateChecksum();
+    assert(!filter.check(frame));
+    assert(filter.check(frame));
+    assert(filter.size() == 1);
+}
+
 int main() {
     receiveLongFrame(true, 19200); // Regression reproduction with IDF defaults.
     for (unsigned phaseMs = 0; phaseMs < 20; ++phaseMs) {
         receiveLongFrame(false, 19200, phaseMs);
         receiveLongFrame(false, 38400, phaseMs);
+        // Each queue entry adds three bytes. Cover 0x7f/0x80, 0xff/0x100,
+        // and the maximum extended frame so both length bytes are exercised.
+        for (const size_t size : {124U, 125U, 252U, 253U, 264U}) {
+            receiveLongFrame(false, 19200, phaseMs, size);
+            receiveLongFrame(false, 38400, phaseMs, size);
+        }
     }
     checkConfigurationFailure();
     checkEventQueueMarginAndErrors();
+    checkRepetitionWithHighBytes();
 }
